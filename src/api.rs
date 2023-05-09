@@ -1,6 +1,4 @@
-use ceramic_event::{
-    Base64String, Jws, MultiBase32String, MultiBase36String, StreamId, StreamIdType,
-};
+use ceramic_event::{Base64String, Jws, MultiBase32String, MultiBase36String, StreamId, StreamIdType};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
@@ -44,28 +42,6 @@ pub struct UpdateRequest {
 }
 
 #[derive(Deserialize)]
-pub struct PostResponse {
-    error: Option<String>,
-    #[serde(rename = "streamId")]
-    stream_id: Option<StreamId>,
-}
-
-impl PostResponse {
-    pub fn resolve(self, context: &str) -> anyhow::Result<StreamId> {
-        if let Some(stream_id) = self.stream_id {
-            Ok(stream_id)
-        } else {
-            let post = if let Some(err) = self.error {
-                format!(": {}", err)
-            } else {
-                ": No additional information provided by ceramic".to_string()
-            };
-            anyhow::bail!(format!("{}{}", context, post))
-        }
-    }
-}
-
-#[derive(Deserialize)]
 pub struct StateLog {
     pub cid: MultiBase36String,
 }
@@ -84,8 +60,43 @@ pub struct StreamState {
 }
 
 #[derive(Deserialize)]
+pub struct PostResponse {
+    #[serde(rename = "streamId")]
+    pub stream_id: StreamId,
+    pub state: Option<StreamState>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub enum PostResponseOrError {
+    Error {
+        error: String,
+    },
+    Ok(PostResponse),
+}
+
+impl PostResponseOrError {
+    pub fn resolve(self, context: &str) -> anyhow::Result<PostResponse> {
+        match self {
+            Self::Error { error } => {
+                anyhow::bail!(format!("{}: {}", context, error))
+            }
+            Self::Ok(resp) => {
+                Ok(resp)
+            }
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct Commit {
+    pub cid: MultiBase36String,
+    pub value: serde_json::Value,
+}
+
+#[derive(Deserialize)]
 pub struct GetResponse {
     #[serde(rename = "streamId")]
     pub stream_id: StreamId,
-    pub state: StreamState,
+    pub commits: Vec<Commit>,
 }

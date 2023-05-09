@@ -18,5 +18,12 @@ jobs:
     - uses: actions/checkout@v3
     - name: Build
       run: cargo build --verbose
+    - name: Start Ceramic
+      run: docker compose -f it/docker-compose.yml up -d
+    - name: Wait for Ceramic
+      run: ./it/wait_for_ceramic.sh
     - name: Run tests
       run: cargo test --verbose
+
+    env:
+      DID_PRIVATE_KEY: ${{ secrets.DID_PRIVATE_KEY }}
