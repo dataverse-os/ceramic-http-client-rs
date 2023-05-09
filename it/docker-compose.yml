@@ -4,6 +4,6 @@ services:
   ceramic-service:
     image: ceramicnetwork/js-ceramic
     volumes:
-      - ./it/data:/root/.ceramic
-    expose:
-      - 7071
+      - ./data:/root/.ceramic
+    ports:
+      - 7071:7071

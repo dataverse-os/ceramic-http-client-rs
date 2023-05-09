@@ -1,7 +1,7 @@
 {
   "anchor": {},
   "http-api": {
-    "hostname": "127.0.0.1",
+    "hostname": "0.0.0.0",
     "port": 7071,
     "admin-dids": [
       "did:key:z6MkeqCTPhHPVg3HaAAtsR7vZ6FXkAHPXEbTJs7Y4CQABV9Z"
@@ -29,8 +29,8 @@
     "local-directory": "/root/.ceramic/statestore"
   },
   "indexing": {
-    "db": "/root/.ceramic/ceramic.db",
-    "allow-queries-before-historical-sync": false,
+    "db": "sqlite:///root/.ceramic/ceramic.db",
+    "allow-queries-before-historical-sync": true,
     "enable-historical-sync": false
   }
 }
