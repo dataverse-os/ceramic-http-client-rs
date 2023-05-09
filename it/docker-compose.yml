@@ -5,11 +5,5 @@ services:
     image: ceramicnetwork/js-ceramic
     volumes:
       - ./it/data:/root/.ceramic
-    ports:
-      - 7071:7071
-    networks:
-      - ceramic-testing-network
-
-# network can be any name but make sure it use a same name.
-networks:
-  ceramic-testing-network:
+    expose:
+      - 7071
