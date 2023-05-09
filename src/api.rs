@@ -1,4 +1,6 @@
-use ceramic_event::{Base64String, Jws, MultiBase32String, MultiBase36String, StreamId, StreamIdType};
+use ceramic_event::{
+    Base64String, Jws, MultiBase32String, MultiBase36String, StreamId, StreamIdType,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
@@ -69,9 +71,7 @@ pub struct PostResponse {
 #[derive(Deserialize)]
 #[serde(untagged)]
 pub enum PostResponseOrError {
-    Error {
-        error: String,
-    },
+    Error { error: String },
     Ok(PostResponse),
 }
 
@@ -81,9 +81,7 @@ impl PostResponseOrError {
             Self::Error { error } => {
                 anyhow::bail!(format!("{}: {}", context, error))
             }
-            Self::Ok(resp) => {
-                Ok(resp)
-            }
+            Self::Ok(resp) => Ok(resp),
         }
     }
 }

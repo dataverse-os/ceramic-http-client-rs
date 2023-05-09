@@ -1,6 +1,8 @@
 //! Ceramic HTTP API
 //!
 //! This crate provides a client for interacting with the Ceramic HTTP API.
+#![deny(warnings)]
+#![deny(missing_docs)]
 mod api;
 mod model_definition;
 
@@ -20,6 +22,7 @@ struct CeramicHttpClient {
 }
 
 impl CeramicHttpClient {
+    /// Create a new client, using a signer and private key
     pub fn new(signer: DidDocument, private_key: &str) -> Self {
         Self {
             signer,
@@ -27,14 +30,17 @@ impl CeramicHttpClient {
         }
     }
 
+    /// Get the streams endpoint
     pub fn streams_endpoint(&self) -> &'static str {
         "/api/v0/streams"
     }
 
+    /// Get the commits endpoint
     pub fn commits_endpoint(&self) -> &'static str {
         "/api/v0/commits"
     }
 
+    /// Create a serde compatible request for model creation
     pub async fn create_model_request(
         &self,
         model: &ModelDefinition,
@@ -61,6 +67,7 @@ impl CeramicHttpClient {
         })
     }
 
+    /// Create a serde compatible request for a single instance per account creation of a model
     pub async fn create_single_instance_request(
         &self,
         model_id: &StreamId,
@@ -88,6 +95,7 @@ impl CeramicHttpClient {
         })
     }
 
+    /// Create a serde compatible request for a list instance per account creation of a model
     pub async fn create_list_instance_request<T: Serialize>(
         &self,
         model_id: &StreamId,
@@ -117,6 +125,7 @@ impl CeramicHttpClient {
         })
     }
 
+    /// Create a serde compatible request to update an existing model instance
     pub async fn create_update_request(
         &self,
         model: &StreamId,
@@ -127,7 +136,7 @@ impl CeramicHttpClient {
             anyhow::bail!("StreamId was not a document");
         }
         let tip = Cid::from_str(get.commits[0].cid.as_ref())?;
-        let args = EventArgs::new_with_parent(&self.signer, &model);
+        let args = EventArgs::new_with_parent(&self.signer, model);
         let commit = args.update(&patch, &self.private_key, &tip).await?;
         let controllers: Vec<_> = args.controllers().map(|c| c.id.clone()).collect();
         let data = Base64String::from(commit.linked_block.as_ref());
@@ -151,9 +160,12 @@ impl CeramicHttpClient {
     }
 }
 
+/// Remote HTTP Functionality
+#[cfg(feature = "remote")]
 pub mod remote {
     use super::*;
 
+    /// Ceramic remote http client
     pub struct CeramicRemoteHttpClient {
         cli: CeramicHttpClient,
         remote: reqwest::Client,
@@ -161,6 +173,7 @@ pub mod remote {
     }
 
     impl CeramicRemoteHttpClient {
+        /// Create a new ceramic remote http client for a signer, private key, and url
         pub fn new(signer: DidDocument, private_key: &str, remote: url::Url) -> Self {
             Self {
                 cli: CeramicHttpClient::new(signer, private_key),
@@ -169,11 +182,13 @@ pub mod remote {
             }
         }
 
+        /// Utility function to get a url for this client's base url, given a path
         pub fn url_for_path(&self, path: &str) -> anyhow::Result<url::Url> {
             let u = self.url.join(path)?;
             Ok(u)
         }
 
+        /// Create a model on the remote ceramic
         pub async fn create_model(&self, model: &ModelDefinition) -> anyhow::Result<StreamId> {
             let req = self.cli.create_model_request(model).await?;
             let resp: api::PostResponseOrError = self
@@ -187,6 +202,7 @@ pub mod remote {
             Ok(resp.resolve("create_model")?.stream_id)
         }
 
+        /// Create an instance of a model that allows a single instance on the remote ceramic
         pub async fn create_single_instance(
             &self,
             model_id: &StreamId,
@@ -203,6 +219,7 @@ pub mod remote {
             Ok(resp.resolve("create_single_instance")?.stream_id)
         }
 
+        /// Create an instance of a model allowing multiple instances on a remote ceramic
         pub async fn create_list_instance<T: Serialize>(
             &self,
             model_id: &StreamId,
@@ -223,6 +240,7 @@ pub mod remote {
             Ok(resp.resolve("create_list_instance")?.stream_id)
         }
 
+        /// Update an instance that was previously created
         pub async fn update(
             &self,
             model: &StreamId,
@@ -242,6 +260,7 @@ pub mod remote {
             res.resolve("Update failed")
         }
 
+        /// Get an instance of model
         pub async fn get(&self, stream_id: &StreamId) -> anyhow::Result<api::GetResponse> {
             let endpoint = format!("{}/{}", self.cli.commits_endpoint(), stream_id);
             let endpoint = self.url_for_path(&endpoint)?;
@@ -249,6 +268,7 @@ pub mod remote {
             Ok(resp)
         }
 
+        /// Get the content of an instance of a model as a serde compatible type
         pub async fn get_as<T: DeserializeOwned>(&self, stream_id: &StreamId) -> anyhow::Result<T> {
             let mut resp = self.get(stream_id).await?;
             if let Some(commit) = resp.commits.pop() {
@@ -261,8 +281,7 @@ pub mod remote {
     }
 }
 
-//#[cfg(all(test, feature = "remote"))]
-#[cfg(test)]
+#[cfg(all(test, feature = "remote"))]
 pub mod tests {
     use super::remote::*;
     use super::*;
