@@ -3,7 +3,7 @@ use ceramic_event::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct BlockHeader {
     pub family: String,
     pub controllers: Vec<String>,
@@ -43,40 +43,40 @@ pub struct UpdateRequest {
     pub stream_id: MultiBase36String,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct StateLog {
     pub cid: MultiBase36String,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct Metadata {
     pub controllers: Vec<String>,
     pub model: StreamId,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct StreamState {
     pub content: serde_json::Value,
     pub log: Vec<StateLog>,
     pub metadata: Metadata,
 }
 
-#[derive(Deserialize)]
-pub struct PostResponse {
+#[derive(Debug, Deserialize)]
+pub struct StreamsResponse {
     #[serde(rename = "streamId")]
     pub stream_id: StreamId,
     pub state: Option<StreamState>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(untagged)]
-pub enum PostResponseOrError {
+pub enum StreamsResponseOrError {
     Error { error: String },
-    Ok(PostResponse),
+    Ok(StreamsResponse),
 }
 
-impl PostResponseOrError {
-    pub fn resolve(self, context: &str) -> anyhow::Result<PostResponse> {
+impl StreamsResponseOrError {
+    pub fn resolve(self, context: &str) -> anyhow::Result<StreamsResponse> {
         match self {
             Self::Error { error } => {
                 anyhow::bail!(format!("{}: {}", context, error))
@@ -86,14 +86,19 @@ impl PostResponseOrError {
     }
 }
 
-#[derive(Deserialize)]
-pub struct Commit {
-    pub cid: MultiBase36String,
-    pub value: serde_json::Value,
+#[derive(Debug, Deserialize)]
+pub struct JwsValue {
+    pub jws: Jws,
 }
 
-#[derive(Deserialize)]
-pub struct GetResponse {
+#[derive(Debug, Deserialize)]
+pub struct Commit {
+    pub cid: MultiBase36String,
+    pub value: Option<JwsValue>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CommitsResponse {
     #[serde(rename = "streamId")]
     pub stream_id: StreamId,
     pub commits: Vec<Commit>,

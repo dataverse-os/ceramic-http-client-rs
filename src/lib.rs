@@ -13,6 +13,7 @@ use ceramic_event::{
 use serde::{de::DeserializeOwned, Serialize};
 use std::str::FromStr;
 
+pub use ceramic_event;
 pub use model_definition::{GetRootSchema, ModelDefinition};
 pub use schemars;
 
@@ -129,34 +130,40 @@ impl CeramicHttpClient {
     pub async fn create_update_request(
         &self,
         model: &StreamId,
-        get: &api::GetResponse,
+        get: &api::StreamsResponse,
         patch: json_patch::Patch,
     ) -> anyhow::Result<api::UpdateRequest> {
         if !get.stream_id.is_document() {
             anyhow::bail!("StreamId was not a document");
         }
-        let tip = Cid::from_str(get.commits[0].cid.as_ref())?;
-        let args = EventArgs::new_with_parent(&self.signer, model);
-        let commit = args.update(&patch, &self.private_key, &tip).await?;
-        let controllers: Vec<_> = args.controllers().map(|c| c.id.clone()).collect();
-        let data = Base64String::from(commit.linked_block.as_ref());
-        let model = Base64String::from(model.to_vec()?);
-        let stream = MultiBase36String::try_from(&get.stream_id)?;
-        Ok(api::UpdateRequest {
-            r#type: StreamIdType::Document,
-            block: api::BlockData {
-                header: api::BlockHeader {
-                    family: "test".to_string(),
-                    controllers,
-                    model,
+        if let Some(tip) = get.state.as_ref().and_then(|s| s.log.last()) {
+            let tip = Cid::from_str(tip.cid.as_ref())?;
+            let args = EventArgs::new_with_parent(&self.signer, model);
+            let commit = args
+                .update(&get.stream_id.cid, &tip, &self.private_key, &patch)
+                .await?;
+            let controllers: Vec<_> = args.controllers().map(|c| c.id.clone()).collect();
+            let data = Base64String::from(commit.linked_block.as_ref());
+            let model = Base64String::from(model.to_vec()?);
+            let stream = MultiBase36String::try_from(&get.stream_id)?;
+            Ok(api::UpdateRequest {
+                r#type: StreamIdType::Document,
+                block: api::BlockData {
+                    header: api::BlockHeader {
+                        family: "test".to_string(),
+                        controllers,
+                        model,
+                    },
+                    linked_block: Some(data.clone()),
+                    jws: Some(commit.jws),
+                    data: Some(data),
+                    cacao_block: None,
                 },
-                linked_block: Some(data.clone()),
-                jws: Some(commit.jws),
-                data: Some(data),
-                cacao_block: None,
-            },
-            stream_id: stream,
-        })
+                stream_id: stream,
+            })
+        } else {
+            Err(anyhow::anyhow!("No commits found for stream ",))
+        }
     }
 }
 
@@ -191,7 +198,7 @@ pub mod remote {
         /// Create a model on the remote ceramic
         pub async fn create_model(&self, model: &ModelDefinition) -> anyhow::Result<StreamId> {
             let req = self.cli.create_model_request(model).await?;
-            let resp: api::PostResponseOrError = self
+            let resp: api::StreamsResponseOrError = self
                 .remote
                 .post(self.url_for_path(self.cli.streams_endpoint())?)
                 .json(&req)
@@ -208,7 +215,7 @@ pub mod remote {
             model_id: &StreamId,
         ) -> anyhow::Result<StreamId> {
             let req = self.cli.create_single_instance_request(model_id).await?;
-            let resp: api::PostResponseOrError = self
+            let resp: api::StreamsResponseOrError = self
                 .remote
                 .post(self.url_for_path(self.cli.streams_endpoint())?)
                 .json(&req)
@@ -229,7 +236,7 @@ pub mod remote {
                 .cli
                 .create_list_instance_request(model_id, instance)
                 .await?;
-            let resp: api::PostResponseOrError = self
+            let resp: api::StreamsResponseOrError = self
                 .remote
                 .post(self.url_for_path(self.cli.streams_endpoint())?)
                 .json(&req)
@@ -237,7 +244,8 @@ pub mod remote {
                 .await?
                 .json()
                 .await?;
-            Ok(resp.resolve("create_list_instance")?.stream_id)
+            let resp = resp.resolve("create_list_instance")?;
+            Ok(resp.stream_id)
         }
 
         /// Update an instance that was previously created
@@ -246,10 +254,10 @@ pub mod remote {
             model: &StreamId,
             stream_id: &StreamId,
             patch: json_patch::Patch,
-        ) -> anyhow::Result<api::PostResponse> {
+        ) -> anyhow::Result<api::StreamsResponse> {
             let resp = self.get(stream_id).await?;
             let req = self.cli.create_update_request(model, &resp, patch).await?;
-            let res: api::PostResponseOrError = self
+            let resp: api::StreamsResponseOrError = self
                 .remote
                 .post(self.url_for_path(self.cli.commits_endpoint())?)
                 .json(&req)
@@ -257,22 +265,22 @@ pub mod remote {
                 .await?
                 .json()
                 .await?;
-            res.resolve("Update failed")
+            resp.resolve("update")
         }
 
         /// Get an instance of model
-        pub async fn get(&self, stream_id: &StreamId) -> anyhow::Result<api::GetResponse> {
-            let endpoint = format!("{}/{}", self.cli.commits_endpoint(), stream_id);
+        pub async fn get(&self, stream_id: &StreamId) -> anyhow::Result<api::StreamsResponse> {
+            let endpoint = format!("{}/{}", self.cli.streams_endpoint(), stream_id);
             let endpoint = self.url_for_path(&endpoint)?;
-            let resp: api::GetResponse = self.remote.get(endpoint).send().await?.json().await?;
+            let resp: api::StreamsResponse = self.remote.get(endpoint).send().await?.json().await?;
             Ok(resp)
         }
 
         /// Get the content of an instance of a model as a serde compatible type
         pub async fn get_as<T: DeserializeOwned>(&self, stream_id: &StreamId) -> anyhow::Result<T> {
-            let mut resp = self.get(stream_id).await?;
-            if let Some(commit) = resp.commits.pop() {
-                let resp = serde_json::from_value(commit.value)?;
+            let resp = self.get(stream_id).await?;
+            if let Some(st) = resp.state {
+                let resp = serde_json::from_value(st.content)?;
                 Ok(resp)
             } else {
                 Err(anyhow::anyhow!("No commits for stream {}", stream_id))
@@ -289,6 +297,7 @@ pub mod tests {
     use json_patch::ReplaceOperation;
     use schemars::JsonSchema;
     use serde::{Deserialize, Serialize};
+    use std::time::Duration;
 
     // See https://github.com/ajv-validator/ajv-formats for information on valid formats
     #[derive(Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
@@ -358,6 +367,9 @@ pub mod tests {
             .await
             .unwrap();
 
+        //give anchor time to complete
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
         let patch = json_patch::Patch(vec![json_patch::PatchOperation::Replace(
             ReplaceOperation {
                 path: "/red".to_string(),
@@ -369,8 +381,26 @@ pub mod tests {
         let post_resp: Ball = serde_json::from_value(post_resp.state.unwrap().content).unwrap();
         assert_eq!(post_resp.red, 5);
 
+        //give anchor time to complete
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        let patch = json_patch::Patch(vec![json_patch::PatchOperation::Replace(
+            ReplaceOperation {
+                path: "/blue".to_string(),
+                value: serde_json::json!(8),
+            },
+        )]);
+        let post_resp = ceramic.update(&model, &stream_id, patch).await.unwrap();
+        assert_eq!(post_resp.stream_id, stream_id);
+        let post_resp: Ball = serde_json::from_value(post_resp.state.unwrap().content).unwrap();
+        assert_eq!(post_resp.blue, 8);
+
+        //give anchor time to complete
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
         let get_resp: Ball = ceramic.get_as(&stream_id).await.unwrap();
         assert_eq!(get_resp.red, 5);
+        assert_eq!(get_resp.blue, 8);
         assert_eq!(get_resp, post_resp);
     }
 }
