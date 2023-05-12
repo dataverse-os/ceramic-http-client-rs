@@ -14,7 +14,10 @@ use serde::{de::DeserializeOwned, Serialize};
 use std::str::FromStr;
 
 pub use ceramic_event;
-pub use model_definition::{GetRootSchema, ModelDefinition};
+pub use model_definition::{
+    GetRootSchema, ModelAccountRelation, ModelDefinition, ModelRelationDefinition,
+    ModelViewDefinition,
+};
 pub use schemars;
 
 /// Client for interacting with the Ceramic HTTP API
