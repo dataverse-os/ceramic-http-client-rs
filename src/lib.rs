@@ -17,7 +17,8 @@ pub use ceramic_event;
 pub use model_definition::{GetRootSchema, ModelDefinition};
 pub use schemars;
 
-struct CeramicHttpClient {
+/// Client for interacting with the Ceramic HTTP API
+pub struct CeramicHttpClient {
     signer: DidDocument,
     private_key: String,
 }
