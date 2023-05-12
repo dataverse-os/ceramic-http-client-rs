@@ -3,7 +3,8 @@
 //! This crate provides a client for interacting with the Ceramic HTTP API.
 #![deny(warnings)]
 #![deny(missing_docs)]
-mod api;
+/// Structures for working with ceramic http api
+pub mod api;
 mod model_definition;
 
 use ceramic_event::{

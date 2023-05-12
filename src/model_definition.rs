@@ -8,7 +8,9 @@ use std::collections::HashMap;
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum ModelAccountRelation {
+    /// Multiple instances of model for account
     List,
+    /// Single instead of model for account
     Single,
 }
 
@@ -16,19 +18,44 @@ pub enum ModelAccountRelation {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum ModelRelationDefinition {
+    /// Related to the account
     Account,
-    Document { model: StreamId },
+    /// Related to a document (instance)
+    Document {
+        /// Model related to
+        model: StreamId
+    },
 }
 
 /// Describe how model views are created
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum ModelViewDefinition {
+    /// View at account level
     DocumentAccount,
+    /// View at version level
     DocumentVersion,
-    RelationDocument { model: StreamId, property: String },
-    RelationFrom { model: StreamId, property: String },
-    RelationCountFrom { model: StreamId, property: String },
+    /// View at document relation level
+    RelationDocument {
+        /// Related model
+        model: StreamId,
+        /// Property related to
+        property: String
+    },
+    /// View from relation
+    RelationFrom {
+        /// model related to
+        model: StreamId,
+        /// property related to
+        property: String
+    },
+    /// Count of relations from model
+    RelationCountFrom {
+        /// model related to
+        model: StreamId,
+        /// property related to
+        property: String
+    },
 }
 
 /// Schema encoded as Cbor
