@@ -22,6 +22,7 @@ pub use model_definition::{
 pub use schemars;
 
 /// Client for interacting with the Ceramic HTTP API
+#[derive(Clone, Debug)]
 pub struct CeramicHttpClient {
     signer: DidDocument,
     private_key: String,
