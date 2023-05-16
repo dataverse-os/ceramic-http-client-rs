@@ -131,7 +131,7 @@ impl CeramicHttpClient {
         })
     }
 
-    /// Create a serde compatible request to update an existing model instance
+    /// Create a serde compatible request to update specific parts an existing model instance
     pub async fn create_update_request(
         &self,
         model: &StreamId,
@@ -169,6 +169,22 @@ impl CeramicHttpClient {
         } else {
             Err(anyhow::anyhow!("No commits found for stream ",))
         }
+    }
+
+    /// Create a serde compatible request to replace an existing model instance completely
+    pub async fn create_replace_request<T: Serialize>(
+        &self,
+        model: &StreamId,
+        get: &api::StreamsResponse,
+        data: T,
+    ) -> anyhow::Result<api::UpdateRequest> {
+        let data = serde_json::to_value(data)?;
+        let diff = if let Some(existing) = get.state.as_ref().map(|st| &st.content) {
+            json_patch::diff(existing, &data)
+        } else {
+            json_patch::diff(&serde_json::json!({}), &data)
+        };
+        self.create_update_request(model, get, diff).await
     }
 }
 
@@ -271,6 +287,26 @@ pub mod remote {
                 .json()
                 .await?;
             resp.resolve("update")
+        }
+
+        /// Replace an instance that was previously created
+        pub async fn replace<T: Serialize>(
+            &self,
+            model: &StreamId,
+            stream_id: &StreamId,
+            data: T,
+        ) -> anyhow::Result<api::StreamsResponse> {
+            let resp = self.get(stream_id).await?;
+            let req = self.cli.create_replace_request(model, &resp, data).await?;
+            let resp: api::StreamsResponseOrError = self
+                .remote
+                .post(self.url_for_path(self.cli.commits_endpoint())?)
+                .json(&req)
+                .send()
+                .await?
+                .json()
+                .await?;
+            resp.resolve("replace")
         }
 
         /// Get an instance of model
@@ -406,6 +442,63 @@ pub mod tests {
         let get_resp: Ball = ceramic.get_as(&stream_id).await.unwrap();
         assert_eq!(get_resp.red, 5);
         assert_eq!(get_resp.blue, 8);
+        assert_eq!(get_resp, post_resp);
+    }
+
+    #[tokio::test]
+    async fn should_create_and_replace_list() {
+        let d = did();
+        let ceramic = CeramicRemoteHttpClient::new(d.clone(), &did_private_key(), ceramic_url());
+        let model = create_model(&ceramic).await;
+        let stream_id = ceramic
+            .create_list_instance(
+                &model,
+                &Ball {
+                    creator: d.id.to_string(),
+                    radius: 1,
+                    red: 2,
+                    green: 3,
+                    blue: 4,
+                },
+            )
+            .await
+            .unwrap();
+
+        //give anchor time to complete
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        let replace = Ball {
+            creator: d.id.to_string(),
+            radius: 1,
+            red: 5,
+            green: 3,
+            blue: 4,
+        };
+
+        let post_resp = ceramic.replace(&model, &stream_id, &replace).await.unwrap();
+        assert_eq!(post_resp.stream_id, stream_id);
+        let post_resp: Ball = serde_json::from_value(post_resp.state.unwrap().content).unwrap();
+        assert_eq!(post_resp, replace);
+
+        //give anchor time to complete
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        let replace = Ball {
+            creator: d.id.to_string(),
+            radius: 1,
+            red: 0,
+            green: 3,
+            blue: 10,
+        };
+        let post_resp = ceramic.replace(&model, &stream_id, &replace).await.unwrap();
+        assert_eq!(post_resp.stream_id, stream_id);
+        let post_resp: Ball = serde_json::from_value(post_resp.state.unwrap().content).unwrap();
+        assert_eq!(post_resp, replace);
+
+        //give anchor time to complete
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        let get_resp: Ball = ceramic.get_as(&stream_id).await.unwrap();
         assert_eq!(get_resp, post_resp);
     }
 }

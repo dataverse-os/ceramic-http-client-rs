@@ -23,7 +23,7 @@ pub enum ModelRelationDefinition {
     /// Related to a document (instance)
     Document {
         /// Model related to
-        model: StreamId
+        model: StreamId,
     },
 }
 
@@ -40,21 +40,21 @@ pub enum ModelViewDefinition {
         /// Related model
         model: StreamId,
         /// Property related to
-        property: String
+        property: String,
     },
     /// View from relation
     RelationFrom {
         /// model related to
         model: StreamId,
         /// property related to
-        property: String
+        property: String,
     },
     /// Count of relations from model
     RelationCountFrom {
         /// model related to
         model: StreamId,
         /// property related to
-        property: String
+        property: String,
     },
 }
 

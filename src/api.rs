@@ -104,7 +104,7 @@ pub enum StreamsResponseOrError {
     /// Response was an error
     Error {
         /// Error message
-        error: String
+        error: String,
     },
     /// Response was ok
     Ok(StreamsResponse),
