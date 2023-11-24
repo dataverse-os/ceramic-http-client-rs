@@ -65,11 +65,19 @@ pub struct UpdateRequest {
 }
 
 /// Log entry for stream
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StateLog {
-    /// CID for stream
-    pub cid: MultiBase36String,
+    /// CID for commit
+    pub cid: String,
+    /// Type of commit
+    pub r#type: u64,
+    /// Timestamp for commit
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<i64>,
+    /// Expiration Time for commit
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expiration_time: Option<i64>,
 }
 
 /// Metadata for stream
@@ -83,15 +91,27 @@ pub struct Metadata {
 }
 
 /// Current state of stream
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StreamState {
+    /// Type of stream
+    pub r#type: u64,
     /// Content of stream
     pub content: Value,
     /// Log of stream
     pub log: Vec<StateLog>,
     /// Metadata for stream
-    pub metadata: Metadata,
+    pub metadata: Value,
+    // pub metadata: Metadata,
+    /// Signature for stream
+    pub signature: i32,
+    /// Anchor status for stream
+    pub anchor_status: String,
+    /// Anchor proof for stream
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor_proof: Option<Value>,
+    /// Type of document
+    pub doctype: String,
 }
 
 /// Response from request against streams endpoint
@@ -135,6 +155,8 @@ impl StreamsResponseOrError {
 pub struct JwsValue {
     /// Jws for a specific commit
     pub jws: Jws,
+    /// linked block content of payload
+    pub linked_block: Base64String,
 }
 
 /// Commit for a specific stream
@@ -142,9 +164,33 @@ pub struct JwsValue {
 #[serde(rename_all = "camelCase")]
 pub struct Commit {
     /// Commit id
-    pub cid: MultiBase36String,
+    pub cid: MultiBase32String,
     /// Value of commit
-    pub value: Option<JwsValue>,
+    pub value: CommitValue,
+}
+
+/// anchor commit value
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnchorValue {
+    /// Commit id
+    pub id: MultiBase32String,
+    /// path
+    pub path: String,
+    /// prev
+    pub prev: MultiBase32String,
+    /// proof
+    pub proof: MultiBase32String,
+}
+
+/// Commit for a specific stream
+#[derive(Debug, Deserialize)]
+#[serde(untagged, rename_all = "camelCase")]
+pub enum CommitValue {
+    /// commit with jws
+    Signed(JwsValue),
+    /// anchor commit
+    Anchor(AnchorValue),
 }
 
 /// Response from commits endpoint
@@ -179,12 +225,24 @@ pub struct IndexModelData {
 #[derive(Serialize)]
 pub struct ListIndexedModelsRequest {}
 
+/// Request to list pinned models
+#[derive(Serialize)]
+pub struct ListPinnedStreamsRequest {}
+
 /// Response list of indexed models
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListIndexedModelsResponse {
     /// List of indexed models
     pub models: Vec<StreamId>,
+}
+
+/// Response list of pinned streams
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListPinnedStreamsResponse {
+    /// List of pinned streams
+    pub pinned_stream_ids: Vec<StreamId>,
 }
 
 /// Response from call to admin api /getCode
@@ -275,23 +333,13 @@ pub struct QueryRequest {
     /// Model to query documents for
     pub model: StreamId,
     /// Account making query
-    pub account: String,
+    pub account: Option<String>,
     /// Filters to use
     #[serde(rename = "queryFilters", skip_serializing_if = "Option::is_none")]
     pub query: Option<FilterQuery>,
     /// Pagination
     #[serde(flatten)]
     pub pagination: Pagination,
-}
-
-/// Node returned from query
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct QueryNode {
-    /// Content of node
-    pub content: Value,
-    /// Commits for stream
-    pub log: Vec<Commit>,
 }
 
 /// Edge returned from query
@@ -301,7 +349,7 @@ pub struct QueryEdge {
     /// Cursor for edge
     pub cursor: Base64UrlString,
     /// Underlying node
-    pub node: QueryNode,
+    pub node: Option<StreamState>,
 }
 
 /// Info about query pages
@@ -313,9 +361,9 @@ pub struct PageInfo {
     /// Whether previous page exists
     pub has_previous_page: bool,
     /// Cursor for next page
-    pub end_cursor: Base64UrlString,
+    pub end_cursor: Option<Base64UrlString>,
     /// Cursor for previous page
-    pub start_cursor: Base64UrlString,
+    pub start_cursor: Option<Base64UrlString>,
 }
 
 /// Response to query
@@ -335,7 +383,7 @@ pub struct TypedQueryDocument<T> {
     /// Document extracted from content
     pub document: T,
     /// All commits for underlying stream
-    pub commits: Vec<Commit>,
+    pub commits: Vec<StateLog>,
 }
 
 /// Typed response to query
@@ -346,6 +394,18 @@ pub struct TypedQueryResponse<T> {
     pub documents: Vec<TypedQueryDocument<T>>,
     /// Pagination info
     pub page_info: PageInfo,
+}
+
+/// node chains request for http api
+#[derive(Serialize)]
+pub struct NodeChainsRequest {}
+
+/// Node chains response for http api
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeChainsResponse {
+    /// List of supported chains
+    pub supported_chains: Vec<String>,
 }
 
 /// Healthcheck request for http api
@@ -475,6 +535,44 @@ mod tests {
     use std::str::FromStr;
 
     #[test]
+    fn should_deserialize_query_response() {
+        let json = serde_json::json!({
+          "streamId": "kjzl6kcym7w8y5pj1xs5iotnbplg7x4hgoohzusuvk8s7oih3h2fuplcvwvu2wx",
+          "docId": "kjzl6kcym7w8y5pj1xs5iotnbplg7x4hgoohzusuvk8s7oih3h2fuplcvwvu2wx",
+          "commits": [
+            {
+              "cid": "bagcqceraeeto3737ppwcmowjns25bilelzipyxrb4ehjmxz2a3dzbk4llfaq",
+              "value": {
+                "jws": {
+                  "payload": "AXESIHlwcfYaDjgakHz5vbzICzt9KABN0ZGfK-yofbOigqmw",
+                  "signatures": [
+                    {
+                      "signature": "mhhY_--rw6pOWStvPa-lQ4iIYLPeabx7lE9fG5MC5A_nYdoyJEXIObCnJjlNYUZPPjTw2RcZlov_idBN6csnBw",
+                      "protected": "eyJhbGciOiJFZERTQSIsImNhcCI6ImlwZnM6Ly9iYWZ5cmVpZndzNmxtanVkc3Z2dWZyNHM0dnpmdWxhb2tuNzRjN3RpajRxMzR4eGhocmVvdTVwYXJvYSIsImtpZCI6ImRpZDprZXk6ejZNa2dXMTUzcWRidTUxQnZ2dFlOWnpDVUxHRDJza0tpM2sxSHR5S3ZOQWRCcnFTI3o2TWtnVzE1M3FkYnU1MUJ2dnRZTlp6Q1VMR0Qyc2tLaTNrMUh0eUt2TkFkQnJxUyJ9"
+                    }
+                  ],
+                  "link": "bafyreidzoby7mgqohanja7hzxw6mqcz3puuaatorsgpsx3fipwz2favjwa"
+                },
+                "linkedBlock": "omRkYXRhp2hmaWxlTmFtZWRwb3N0aGZpbGVUeXBlAGljb250ZW50SWR4P2tqemw2a2N5bTd3OHk3eG54dnBqd3NwbGUzbHl3b3pxb2k1dGtyeGF2a2V3N2NvYmpoMDk3ZDNrZDI5cGd4NmljcmVhdGVkQXR4GDIwMjMtMDktMDZUMDU6MjI6NTAuMzM4Wmlmc1ZlcnNpb25kMC4xMWl1cGRhdGVkQXR4GDIwMjMtMDktMDZUMDU6MjI6NTAuMzM4Wmtjb250ZW50VHlwZXiHZXlKeVpYTnZkWEpqWlNJNklrTkZVa0ZOU1VNaUxDSnlaWE52ZFhKalpVbGtJam9pYTJwNmJEWm9kbVp5WW5jMlkyRjBaV3N6Tm1nemNHVndNRGxyT1dkNWJXWnViR0U1YXpadmFteG5jbTEzYW05bmRtcHhaemh4TTNwd2VXSnNNWGwxSW4wZmhlYWRlcqRjc2VwZW1vZGVsZW1vZGVsWCjOAQIBhQESIH8JG4Y2KIV/LJ/ZtDn5+K80Ln63tgcVD+fDPvKyFFHIZnVuaXF1ZUx23XKCIao/IA/UZSJrY29udHJvbGxlcnOBeDtkaWQ6cGtoOmVpcDE1NToxOjB4MzEyZUE4NTI3MjZFM0E5ZjYzM0EwMzc3YzBlYTg4MjA4NmQ2NjY2Ng"
+              }
+            },
+            {
+              "cid": "bafyreia5jai7fsmgjpzbeixyn2jari27ymnmkydm5fvwwkm4otthvbohty",
+              "value": {
+                "id": "bagcqceraeeto3737ppwcmowjns25bilelzipyxrb4ehjmxz2a3dzbk4llfaq",
+                "path": "0/0/0/0/1/1/1/1/1",
+                "prev": "bagcqceraldkbjoyvm6urgva2mec53ukzh4s2sexabzegqen3kkakn6gswnea",
+                "proof": "bafyreihqjhbwshytooujyprojoj2x5f2sj7ynof37v7vbpe6dui5guo2lq"
+              }
+            }
+          ]
+        });
+
+        let resp = serde_json::from_value::<CommitsResponse>(json);
+        assert!(resp.is_ok());
+    }
+
+    #[test]
     fn should_serialize_query_request() {
         let mut where_filter = HashMap::new();
         where_filter.insert(
@@ -487,7 +585,7 @@ mod tests {
                 "kjzl6hvfrbw6c8apa5yce6ah3fsz9sgrh6upniy0tz8z76gdm169ds3tf8c051t",
             )
             .unwrap(),
-            account: "test".to_string(),
+            account: None,
             query: Some(filter),
             pagination: Pagination::default(),
         };

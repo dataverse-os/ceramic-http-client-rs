@@ -70,6 +70,16 @@ impl<S: Signer> CeramicHttpClient<S> {
         "/api/v0/admin/models"
     }
 
+    /// Get the pinned streams endpoint
+    pub fn pinned_streams(&self) -> &'static str {
+        "/api/v0/admin/pins"
+    }
+
+    /// Get the chains endpoint
+    pub fn chains_endpoint(&self) -> &'static str {
+        "/api/v0/node/chains"
+    }
+
     /// Get the healthcheck endpoint
     pub fn healthcheck_endpoint(&self) -> &'static str {
         "/api/v0/node/healthcheck"
@@ -257,22 +267,29 @@ impl<S: Signer> CeramicHttpClient<S> {
     /// Create a serde compatible request to query model instances
     pub async fn create_query_request(
         &self,
+        account: Option<String>,
         model: &StreamId,
         query: Option<FilterQuery>,
         pagination: api::Pagination,
     ) -> anyhow::Result<api::QueryRequest> {
         Ok(api::QueryRequest {
             model: model.clone(),
-            account: self.signer.id().id.clone(),
+            account: account.clone(),
             query,
             pagination,
         })
+    }
+
+    /// Create a serde compatible request to get node chains
+    pub async fn create_chains_request(&self) -> anyhow::Result<api::NodeChainsRequest> {
+        Ok(api::NodeChainsRequest {})
     }
 
     /// Create a serde compatible request to check node health
     pub async fn create_healthcheck_request(&self) -> anyhow::Result<api::HealthcheckRequest> {
         Ok(api::HealthcheckRequest {})
     }
+
     /// Create a serde compatible request for the node status
     pub async fn create_node_status_request(
         &self,
@@ -293,7 +310,7 @@ impl<S: Signer> CeramicHttpClient<S> {
 #[cfg(feature = "remote")]
 pub mod remote {
     use super::*;
-    use crate::api::Pagination;
+    use crate::api::{Pagination, QueryEdge};
     use crate::query::FilterQuery;
     use serde::de::DeserializeOwned;
     pub use url::{ParseError, Url};
@@ -394,6 +411,40 @@ pub mod remote {
             Ok(resp)
         }
 
+        /// List pinned streams on the remote ceramic
+        pub async fn list_pinned_streams(&self) -> anyhow::Result<api::ListPinnedStreamsResponse> {
+            let data = api::ListPinnedStreamsRequest {};
+            let resp: api::AdminCodeResponse = self
+                .remote
+                .get(self.url_for_path(self.cli.admin_code_endpoint())?)
+                .send()
+                .await?
+                .json()
+                .await?;
+            let req = api::AdminApiPayload {
+                code: resp.code.to_string(),
+                request_path: self.cli.pinned_streams().to_string(),
+                request_body: data,
+            };
+
+            let jws = Jws::for_data(&self.cli.signer, &req).await?;
+            let req = api::AdminApiRequest::try_from(jws)?;
+
+            let resp: api::ListPinnedStreamsResponse = self
+                .remote
+                .get(self.url_for_path(self.cli.pinned_streams())?)
+                .header(
+                    reqwest::header::AUTHORIZATION,
+                    format!("Basic {}", req.jws()),
+                )
+                .send()
+                .await?
+                .json()
+                .await?;
+
+            Ok(resp)
+        }
+
         /// Create an instance of a model that allows a single instance on the remote ceramic
         pub async fn create_single_instance(
             &self,
@@ -431,6 +482,14 @@ pub mod remote {
                 .await?;
             let resp = resp.resolve("create_list_instance")?;
             Ok(resp.stream_id)
+        }
+
+        /// Get commits of model
+        pub async fn commits(&self, stream_id: &StreamId) -> anyhow::Result<api::CommitsResponse> {
+            let endpoint = format!("{}/{}", self.cli.commits_endpoint(), stream_id);
+            let endpoint = self.url_for_path(&endpoint)?;
+            let resp: api::CommitsResponse = self.remote.get(endpoint).send().await?.json().await?;
+            Ok(resp)
         }
 
         /// Update an instance that was previously created
@@ -495,13 +554,14 @@ pub mod remote {
         /// Query for documents, optionally matching a filter
         pub async fn query(
             &self,
+            account: Option<String>,
             model_id: &StreamId,
             query: Option<FilterQuery>,
             pagination: Pagination,
         ) -> anyhow::Result<api::QueryResponse> {
             let req = self
                 .cli
-                .create_query_request(model_id, query, pagination)
+                .create_query_request(account, model_id, query, pagination)
                 .await?;
             let endpoint = self.url_for_path(self.cli.collection_endpoint())?;
             let resp = self
@@ -515,21 +575,52 @@ pub mod remote {
             Ok(resp)
         }
 
+        /// Query for all documents, optionally matching a filter
+        pub async fn query_all(
+            &self,
+            account: Option<String>,
+            model_id: &StreamId,
+            query: Option<FilterQuery>,
+        ) -> anyhow::Result<Vec<QueryEdge>> {
+            let mut edges = vec![];
+            let mut pagination = Pagination::First {
+                first: 100,
+                after: None,
+            };
+            loop {
+                let resp = self
+                    .query(account.clone(), model_id, query.clone(), pagination)
+                    .await?;
+                edges.extend(resp.edges);
+                if resp.page_info.has_next_page {
+                    pagination = Pagination::First {
+                        first: 100,
+                        after: resp.page_info.end_cursor,
+                    };
+                } else {
+                    break;
+                }
+            }
+            Ok(edges)
+        }
+
         /// Query for documents matching a filter, deserialized to a serde compatible type
         pub async fn query_as<T: DeserializeOwned>(
             &self,
+            account: Option<String>,
             model_id: &StreamId,
             query: Option<FilterQuery>,
             pagination: Pagination,
         ) -> anyhow::Result<api::TypedQueryResponse<T>> {
-            let resp = self.query(model_id, query, pagination).await?;
+            let resp = self.query(account, model_id, query, pagination).await?;
             let try_docs: Result<Vec<_>, _> = resp
                 .edges
                 .into_iter()
-                .map(|edge| {
-                    serde_json::from_value(edge.node.content).map(|doc| api::TypedQueryDocument {
+                .filter_map(|edge| edge.node)
+                .map(|node| {
+                    serde_json::from_value(node.content).map(|doc| api::TypedQueryDocument {
                         document: doc,
-                        commits: edge.node.log,
+                        commits: node.log,
                     })
                 })
                 .collect();
@@ -537,6 +628,20 @@ pub mod remote {
                 documents: try_docs?,
                 page_info: resp.page_info,
             })
+        }
+
+        /// Get Ceramic node chains
+        pub async fn chains(&self) -> anyhow::Result<api::NodeChainsResponse> {
+            let req = self.cli.create_chains_request().await?;
+            let resp = self
+                .remote
+                .get(self.url_for_path(self.cli.chains_endpoint())?)
+                .json(&req)
+                .send()
+                .await?
+                .json()
+                .await?;
+            Ok(resp)
         }
 
         /// Check Ceramic node health
@@ -791,7 +896,7 @@ pub mod tests {
         where_filter.insert("blue".to_string(), OperationFilter::EqualTo(5.into()));
         let filter = FilterQuery::Where(where_filter);
         let res = ceramic
-            .query(&model, Some(filter), Pagination::default())
+            .query(None, &model, Some(filter), Pagination::default())
             .await
             .unwrap();
         assert_eq!(res.edges.len(), 1);
