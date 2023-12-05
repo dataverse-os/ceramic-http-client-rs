@@ -19,7 +19,7 @@ pub struct BlockHeader {
 }
 
 /// Block data
-#[derive(Serialize)]
+#[derive(Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockData<T: Serialize> {
     /// Header for block
@@ -36,7 +36,7 @@ pub struct BlockData<T: Serialize> {
     pub linked_block: Option<Base64String>,
     /// Related cacao block
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cacao_block: Option<MultiBase32String>,
+    pub cacao_block: Option<Base64String>,
 }
 
 /// Create request for http api
