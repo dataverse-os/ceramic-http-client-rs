@@ -114,6 +114,16 @@ pub struct StreamState {
     pub doctype: String,
 }
 
+/// Response from request anchor of stream
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestAnchorResponse {
+    /// ID of stream requested
+    pub stream_id: StreamId,
+    /// Anchor status for stream
+    pub anchor_status: u64,
+}
+
 /// Response from request against streams endpoint
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

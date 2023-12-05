@@ -532,6 +532,18 @@ pub mod remote {
             resp.resolve("replace")
         }
 
+        /// Request anchor for a stream
+        pub async fn request_anchor(
+            &self,
+            stream_id: &StreamId,
+        ) -> anyhow::Result<api::RequestAnchorResponse> {
+            let endpoint = format!("{}/{}/anchor", self.cli.streams_endpoint(), stream_id);
+            let endpoint = self.url_for_path(&endpoint)?;
+            let resp: api::RequestAnchorResponse =
+                self.remote.post(endpoint).send().await?.json().await?;
+            Ok(resp)
+        }
+
         /// Get an instance of model
         pub async fn get(&self, stream_id: &StreamId) -> anyhow::Result<api::StreamsResponse> {
             let endpoint = format!("{}/{}", self.cli.streams_endpoint(), stream_id);
