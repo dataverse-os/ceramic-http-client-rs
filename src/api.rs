@@ -23,7 +23,8 @@ pub struct BlockHeader {
 #[serde(rename_all = "camelCase")]
 pub struct BlockData<T: Serialize> {
     /// Header for block
-    pub header: BlockHeader,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub header: Option<BlockHeader>,
     /// Data for block
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<T>,

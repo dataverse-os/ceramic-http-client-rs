@@ -104,11 +104,11 @@ impl<S: Signer> CeramicHttpClient<S> {
         Ok(api::CreateRequest {
             r#type: StreamIdType::Model,
             block: api::BlockData {
-                header: api::BlockHeader {
+                header: Some(api::BlockHeader {
                     family: "test".to_string(),
                     controllers,
                     model,
-                },
+                }),
                 linked_block: Some(data.clone()),
                 jws: Some(commit.jws),
                 data: Some(data),
@@ -167,11 +167,11 @@ impl<S: Signer> CeramicHttpClient<S> {
         Ok(api::CreateRequest {
             r#type: StreamIdType::ModelInstanceDocument,
             block: api::BlockData {
-                header: api::BlockHeader {
+                header: Some(api::BlockHeader {
                     family: "test".to_string(),
                     controllers,
                     model,
-                },
+                }),
                 linked_block: None,
                 jws: None,
                 data: Some(commit.encoded),
@@ -197,11 +197,11 @@ impl<S: Signer> CeramicHttpClient<S> {
         Ok(api::CreateRequest {
             r#type: StreamIdType::ModelInstanceDocument,
             block: api::BlockData {
-                header: api::BlockHeader {
+                header: Some(api::BlockHeader {
                     family: "test".to_string(),
                     controllers,
                     model,
-                },
+                }),
                 linked_block: Some(data.clone()),
                 jws: Some(commit.jws),
                 data: Some(data),
@@ -231,11 +231,11 @@ impl<S: Signer> CeramicHttpClient<S> {
             Ok(api::UpdateRequest {
                 r#type: StreamIdType::ModelInstanceDocument,
                 block: api::BlockData {
-                    header: api::BlockHeader {
+                    header: Some(api::BlockHeader {
                         family: "test".to_string(),
                         controllers,
                         model,
-                    },
+                    }),
                     linked_block: Some(data.clone()),
                     jws: Some(commit.jws),
                     data: Some(data),
