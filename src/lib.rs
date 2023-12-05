@@ -449,7 +449,7 @@ pub mod remote {
         pub async fn create_stream(
             &self,
             req: api::CreateRequest<DagCborEncoded>,
-        ) -> anyhow::Result<StreamId> {
+        ) -> anyhow::Result<api::StreamsResponse> {
             let resp: api::StreamsResponseOrError = self
                 .remote
                 .post(self.url_for_path(self.cli.streams_endpoint())?)
@@ -458,7 +458,7 @@ pub mod remote {
                 .await?
                 .json()
                 .await?;
-            Ok(resp.resolve("create_stream")?.stream_id)
+            resp.resolve("create_stream")
         }
 
         /// Create an instance of a model that allows a single instance on the remote ceramic
