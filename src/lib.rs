@@ -445,6 +445,22 @@ pub mod remote {
             Ok(resp)
         }
 
+        /// Create an stream on the remote ceramic
+        pub async fn create_stream(
+            &self,
+            req: api::CreateRequest<DagCborEncoded>,
+        ) -> anyhow::Result<StreamId> {
+            let resp: api::StreamsResponseOrError = self
+                .remote
+                .post(self.url_for_path(self.cli.streams_endpoint())?)
+                .json(&req)
+                .send()
+                .await?
+                .json()
+                .await?;
+            Ok(resp.resolve("create_stream")?.stream_id)
+        }
+
         /// Create an instance of a model that allows a single instance on the remote ceramic
         pub async fn create_single_instance(
             &self,
@@ -490,6 +506,22 @@ pub mod remote {
             let endpoint = self.url_for_path(&endpoint)?;
             let resp: api::CommitsResponse = self.remote.get(endpoint).send().await?.json().await?;
             Ok(resp)
+        }
+
+        /// Update an stream that was previously created
+        pub async fn updat_stream(
+            &self,
+            req: api::UpdateRequest,
+        ) -> anyhow::Result<api::StreamsResponse> {
+            let resp: api::StreamsResponseOrError = self
+                .remote
+                .post(self.url_for_path(self.cli.commits_endpoint())?)
+                .json(&req)
+                .send()
+                .await?
+                .json()
+                .await?;
+            resp.resolve("update")
         }
 
         /// Update an instance that was previously created
